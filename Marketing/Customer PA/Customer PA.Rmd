@@ -1,0 +1,287 @@
+---
+title: <center>Customer Predictive Analysis</center>
+output:
+  html_document:
+    theme: flatly
+    code_folding: hide
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_float: true
+---
+
+<br/>
+<center> <h5> After having analysed our customer's behaviour, effectuated a segmentation, computed the scoring and lifetime value, we now use our customer's information to build a better predictive model. <a href="http://www.essais.io/project/business-analytics/">See the first part of the analysis here</a> </h5> </center>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+
+<br/>
+<hr/>
+<br/>
+
+```{r, echo=FALSE, message=F, warning=F}
+# Use this line to run the code from scratch: rm(list = ls())
+# Color: grey #7F8C8D ; blue #2C3E50 ; red #C0392B
+```
+
+# Data science problem {.tabset}
+
+<br/>
+
+## Business understanding
+
+Our business is a medium sized store located in a large city. Within it 20 years of existence, our business never have done any kind of analytics. But, since few years, the shop is not growing as wanted, and the new manager decided to study the customer’s behaviours.
+
+The manager is aware that companies are sitting on a treasure trove of data, but usually **lack the skills and people to analyse and exploit them efficiently.** So he ask us to look into them.
+
+<br/>
+<hr/>
+<br/>
+
+## Problem 
+
+Few months ago, with only a single database of three variables: Customer ID, Total spent and Date, we proposed an analysis to the managers. Now we need to push it further. We want to know **who are our customers and where we should invest our marketing budget.**
+
+<br/> 
+<hr/>
+<br/>
+
+## Solution
+
+After having done a segmentation, scoring models and customer lifetime value, **we now have gathered more data about our customers to build a better predictive model.** 
+
+As the manager was worried to scare some customers away by our data collection campaign, we asked **only 3 questions relevent for the business: do you have children? do you have pets? are you leaving far from the store?**
+As we couldn't get to intimate, we asked the customer to answer by yes or no for the children and pets question. The employee then guessed if the person was old, middle-aged or young and if it was a man or a woman. So we did gather 5 new variables. 
+
+<br/>
+<hr/>
+<br/>
+
+
+# Data exploration
+
+## The data quality report
+
+Here are the 5 new variables displayed per customers and some summary statistics.
+
+```{r, echo=FALSE, message=F, warning=F}
+# Library needed:
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggvis)
+library(DT)
+
+# Download databases
+Customer <- read.csv("DataBase/ML.csv", header = TRUE, sep = ";")
+Customer_info <- read.csv("DataBase/ML.csv", header = TRUE, sep = ";")
+head(Customer)
+summary(Customer)
+
+## Factors 2 levels
+Customer_info$Long_term_value<-cut(Customer_info$sum, c(0,400,40000))
+levels(Customer_info$Long_term_value) <- c('low_value', 'high_value')
+
+## Factors 5 levels
+Customer_info$Long_term_value_MLevels<-cut(Customer_info$sum, c(0,200,400,600,1000,40000))
+levels(Customer_info$Long_term_value_MLevels) <- c('very_low_value', 'low_value', 'medium_value', 'good_value','high_value')
+
+# Define variables Customer2
+Customer_info$age <- as.factor(Customer_info$age)
+Customer_info$distance <- as.factor(Customer_info$distance)
+
+# Set binary into factor
+Customer_info$sex <- as.factor(Customer_info$sex)
+Customer_info$children <- as.factor(Customer_info$children)
+Customer_info$pets <- as.factor(Customer_info$pets)
+
+# Rename factor levels
+levels(Customer_info$age) <- c('young', 'middle-aged', 'elderly')
+levels(Customer_info$sex) <- c('man', 'woman')
+levels(Customer_info$distance) <- c('near', 'in-middle', 'far')
+levels(Customer_info$children) <- c('no', 'yes')
+levels(Customer_info$pets) <- c('no', 'yes')
+summary(Customer_info)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Handling data issues
+
+<br/>
+
+```{r, message=F, warning=F}
+boxplot(sum ~ children, data=Customer, main="Outliers")  # clear pattern is noticeable.
+```
+
+After presenting this graph to the manager, he told us we could remove the outliers and the negative value. Here is now our database:
+
+```{r, echo=FALSE, message=F, warning=F}
+# remove outliers and NAs
+Customer_info <- Customer_info %>% filter(sum>=0)
+Customer_info <- Customer_info %>% filter(sum<10000)
+Customer_info <- na.omit(Customer_info)
+
+# remove outliers and NAs
+Customer <- Customer %>% filter(sum>=0)
+Customer <- Customer %>% filter(sum<10000)
+Customer <- na.omit(Customer)
+
+summary(Customer_info)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## First visualisations
+
+This graph shows the correlation between each variables. The strength of a correlation is represented by the bubble size and the direction (positive or negative) by the colour. We can see that a woman, with childrens and pets, tends to buy more whereas people living far from the store buy less. 
+
+```{r, message=F, warning=F, fig.width=10}
+library(corrplot)
+Customer_Cor <- Customer %>% select(sum:pets)
+M <- cor(Customer_Cor)
+corrplot(M, method="circle")
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Modeling 
+
+## Predictive modeling {.tabset}
+
+We want to predict which customer is high value potential, which is medium value, and which is low value. Our target variable can therefore take on 3 values: **low_value, medium_value or high_value.**
+
+After setting a cross-validation to train and test our models, we try different machine learning algorithms: the first one is a tree model, the second a naives Bayes and the third a k-nearest neighbors (KNN). 
+
+### Cross-Validation
+```{r, include=FALSE, cache=FALSE}
+library("caret")
+```
+
+```{r, echo=T, warning=F, fig.width=10}
+# Cross-validation dataset
+Customer_cv <- Customer
+
+# Build the 3 levels
+Customer_cv$Long_term_value<-cut(Customer_cv$sum, c(0,100, 400, 40000))
+levels(Customer_cv$Long_term_value) <- c('low_value', 'medium_value', 'high_value')
+
+# Set the target variable as a factor
+Customer_cv$Long_term_value <- as.factor(Customer_cv$Long_term_value)
+Customer_cv <- Customer_cv %>% select(age:Long_term_value)
+
+# cross-validation 
+# library(caret)
+train_control<- trainControl(method="cv", number=5, repeats=3)
+head(train_control)
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Tree learning
+
+```{r, warning=F, fig.width=10}
+library("rpart.plot")
+fit <- rpart(Long_term_value ~ age + sex + distance + children + pets,
+             method = "class",
+             data = Customer_cv,
+             control = rpart.control(minsplit = 20),
+             parms = list(split='information'))
+
+rpart.plot(fit, type=2, extra = 1)
+```
+
+This tree if following the correlation graphs seen above. It says: If you are a woman, if you are leaving close, if you have a children, and if you have a pets, then there is good change that you are a high value customer.
+
+Below we display the **confusion matrix that is key to compare the model** with each other:
+
+```{r, warning=F, fig.width=10}
+library("rpart")
+library("rpart.plot")
+
+# train the model 
+rpartmodel<- train(Long_term_value~., data=Customer_cv, trControl=train_control, method="rpart")
+
+# make predictions
+predictions<- predict(rpartmodel,Customer_cv)
+Customer_cv_tree<- cbind(Customer_cv,predictions)
+
+# summarize results
+confusionMatrix<- confusionMatrix(Customer_cv_tree$predictions,Customer_cv_tree$Long_term_value)
+confusionMatrix
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Naives Bayes
+
+```{r, include=FALSE, cache=FALSE}
+library(e1071)
+library(rminer)
+```
+
+```{r, warning=F, fig.width=10}
+# train the model 
+e1071model2 <- train(Long_term_value~., data=Customer_cv, trControl=train_control, method="nb")
+# make predictions
+predictions <- predict(e1071model2,Customer_cv)
+e1071modelbinded <- cbind(Customer_cv,predictions)
+# summarize results
+confusionMatrix<- confusionMatrix(e1071modelbinded$predictions,e1071modelbinded$Long_term_value)
+confusionMatrix
+```
+
+<br/>
+<hr/>
+<br/>
+
+### KNN
+
+```{r, warning=F, fig.width=10}
+library(class)
+# train the model 
+knnFit <- train(Long_term_value ~ ., data = Customer_cv, method = "knn", trControl = train_control, preProcess = c("center","scale"), tuneLength = 10)
+# make predictions
+predictions<- predict(knnFit,Customer_cv)
+knnFit_bind <- cbind(Customer_cv,predictions)
+# summarize results
+confusionMatrix<- confusionMatrix(knnFit_bind$predictions,knnFit_bind$Long_term_value)
+confusionMatrix
+
+```
+
+
+<br/>
+<hr/>
+<br/>
+
+## Interpretation 
+
+As our classes are **unbalanced** (we have much more low value than high value), the Kappa measure that we find within the confusion matrix is helpful to understand the results. The **Kappa (or Cohen’s Kappa)** compare the observed accuracy with the expected accuracy. For instance if a predictive model always predict low value it can obtain a 60% accuracy for a target variable of 3 classes. The Kappa measure correct for that. 
+
+As we see that the **KNN algorithm can have a lower accuracy score but better Kappa** and regarding the business' need, we advice to use the KNN algorithm to predict better who might be high value. To go even further we can propose a expected value framework that give different weight to each predictions.
+
+<br/>
+<hr/>
+<br/>
+
+# Conclusion
+
+We can now infert how much a customer is a potential for being high value just by asking 3 simple questions. Of course getting more data on our customers could improve the model dramatically, but also could answer very different question. 
+
+Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter")
+
+<br/>
+<hr/>
+<br/>

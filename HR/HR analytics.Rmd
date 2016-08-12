@@ -1,0 +1,362 @@
+---
+title: "<center> HR analytics </center>"
+output:
+  html_document:
+    code_folding: hide
+    highlight: tango
+    number_sections: yes
+    theme: yeti
+    toc: yes
+    toc_float: yes
+  pdf_document:
+    toc: yes
+---
+
+<br/>
+
+![](HR.jpg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+
+# Data to insight to decision {.tabset}
+
+<br/>
+
+## Business understanding
+
+Our example concerns a big company that wants to understand why some of their best and most experienced employees are leaving prematurely. The company also wishes to predict which valuable employees will leave next.
+
+<br/>
+<hr/>
+<br/>
+
+## Analytic solution 
+
+We have two goals: first, we want to understand why valuable employees leave, and second, we want to predict who will leave next.
+
+Therefore, we propose to work with the HR department to gather relevant data about the employees and to communicate the significant effect that could explain and predict employees' departure.
+
+<br/> 
+<hr/>
+<br/>
+
+## Assessing Feasibility
+
+Unfortunately, managers didn't kept an organised record of why people have left, but we can still find some explications in our data set provided by the HR department.
+
+For our 15 000 employees we know: satisfaction level, latest evaluation (yearly), number of project worked on, average monthly hours, time spend in the company (in years), work accident (within the past 2 years), promotion within the past 5 years, department and salary. 
+
+<br/>
+<hr/>
+<br/>
+
+## Analytical Base Table
+
+This is the database from the HR department: (Note that it doesn't take into account the person that have been fired, transferred or hired in the past year...)
+
+```{r, echo=F, message=F, warning=F}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggvis)
+library(corrplot)
+library(DT)
+hr = read.table('HR.csv', header = T,sep=';')
+head(hr)
+```
+
+<br/>
+<hr/>
+<br/>
+
+
+# Data exploration
+
+At this stage we want to understand the data that compose our Analytical Base Table (ABT) and assess where the quality of it might suffer. 
+
+## Data quality report
+
+This table describe the characteristics of each features of our ABT. We can see different statistical measures of central tendency and variation. For example we can see that our attrition rate is equal to 24%, the satisfaction level is around 62% and the performance average is around 71%. We see that on average people work on 3 to 4 projects a year and about 200 hours per months.
+
+```{r, echo=F, message=F, warning=F}
+# Library needed:
+summary(hr)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## First visualisations {.tabset}
+
+<br/>
+
+### Graph
+
+This graph present the correlations between each variables. The size of the bubbles reveal the significance of the correlation, while the colour present the direction (either positive or negative).
+
+```{r, message=F, warning=F, fig.width=10}
+HR_correlation <- hr %>% select(satisfaction_level:promotion_last_5years)
+M <- cor(HR_correlation)
+corrplot(M, method="circle")
+```
+
+<br/>
+
+On average people who leave have a low satisfaction level, they work more and didn't get promoted within the past five years.
+
+<hr/>
+
+### Data
+
+```{r, message=F, warning=F, fig.width=10}
+cor(HR_correlation)
+```
+
+<br/>
+
+On average people who leave have a low satisfaction level, they work more and didn't get promoted within the past five years.
+
+<hr/>
+
+## Who is leaving?
+
+Let's create a data frame with only the people that have left the company, so we can visualise what is the distribution of each features:
+
+```{r, message=F, warning=F, fig.width=10}
+hr_hist <- hr %>% filter(left==1)
+par(mfrow=c(1,3))
+hist(hr_hist$satisfaction_level,col="#3090C7", main = "Satisfaction level") 
+hist(hr_hist$last_evaluation,col="#3090C7", main = "Last evaluation")
+hist(hr_hist$average_montly_hours,col="#3090C7", main = "Average montly hours")
+```
+
+We can see why we don't want to retain everybody. Some people don't work well as we can see from their evaluation, but clearly there are also many good workers that leave.
+
+```{r, message=F, warning=F, fig.width=10}
+par(mfrow=c(1,2))
+hist(hr_hist$Work_accident,col="#3090C7", main = "Work accident")
+plot(hr_hist$salary,col="#3090C7", main = "Salary")
+```
+
+<hr/>
+
+In the total of 15 000 employees that compose our database, here are the people that have left:
+
+```{r, echo=F, warning=F, fig.width=10}
+
+hr_leaving_people <- hr %>% filter(left==1)
+nrow(hr_leaving_people)
+
+```
+
+More problematic, here are the total of employees that received an evaluation above average, or spend at least four years in the company, or were working on more than 5 projects at the same time and still have left the company. **These are the people the company should have retained.**
+
+```{r, warning=F, fig.width=10}
+hr_good_leaving_people <- hr_leaving_people %>% filter(last_evaluation >= 0.70 | time_spend_company >= 4 | number_project > 5)
+nrow(hr_good_leaving_people)
+```
+
+<hr/>
+
+## Why good people leave? {.tabset}
+
+Let's re-use the data table created above that contain only the most valuable employees and see why they tend to leave. 
+
+### Graph
+
+```{r, message=F, warning=F, fig.width=10}
+hr_good_leaving_people2 <- hr %>% filter(last_evaluation >= 0.70 | time_spend_company >= 4 | number_project > 5)
+hr_good_people_select <- hr_good_leaving_people2 %>% select(satisfaction_level, number_project: promotion_last_5years)
+M <- cor(hr_good_people_select)
+corrplot(M, method="circle")
+```
+
+<br/>
+
+Here it's much clearer. On average valuable employees that leave are not satisfayed, work on many projects, spend many hours in the company each month and aren't promoted. 
+
+<br/>
+<hr/>
+<br/>
+
+### Data 
+
+```{r, message=F, warning=F, fig.width=10}
+summary(hr_good_leaving_people2)
+```
+
+<br/>
+
+Here it's much clearer. On average valuable employees that leave are not satisfayed, work on many projects, spend many hours in the company each month and aren't promoted. 
+
+<br/>
+<hr/>
+<br/>
+
+# Modeling 
+
+Now we want to predict which valuable employe will leave next.
+
+## Select database
+
+Let's use the same database than above where we kept the most valuable employees. Here is the summary of that database.
+
+```{r, warning=F, fig.width=10}
+hr_model <- hr %>% filter(last_evaluation >= 0.70 | time_spend_company >= 4 | number_project > 5)
+summary(hr_model)
+```
+
+## Predictive modeling {.tabset}
+
+After setting our cross-validation we build and compare different predictive models. The first one use a tree model, the second a naives bayes and the third a logistic regression. 
+
+### Cross-Validation
+
+```{r, echo=T, warning=F, fig.width=10}
+# Set the target variable as a factor
+hr_model$left <- as.factor(hr_model$left)
+## install.packages("caret") 
+library("caret")
+# cross-validation
+train_control<- trainControl(method="cv", number=5, repeats=3)
+head(train_control)
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Tree learning
+
+```{r, warning=F, fig.width=10}
+library("rpart")
+library("rpart.plot")
+# train the model 
+rpartmodel<- train(left~., data=hr_model, trControl=train_control, method="rpart")
+# make predictions
+predictions<- predict(rpartmodel,hr_model)
+hr_model_tree<- cbind(hr_model,predictions)
+# summarize results
+confusionMatrix<- confusionMatrix(hr_model_tree$predictions,hr_model_tree$left)
+confusionMatrix
+
+# library("ROCR")
+# hr_model_tree$predictions <- as.numeric(paste(hr_model_tree$predictions))
+# 
+# perf.obj <- prediction(predictions=hr_model_tree$predictions, labels=hr_model_tree$left)
+# # Get data for ROC curve
+# roc.obj <- performance(perf.obj, measure="tpr", x.measure="fpr")
+# plot(roc.obj,
+#      main="Cross-Sell - ROC Curves",
+#      xlab="1 – Specificity: False Positive Rate",
+#      ylab="Sensitivity: True Positive Rate",
+#      col="blue")
+# abline(0,1,col="grey")
+
+
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Naives Bayes
+
+```{r, echo=F, warning=F, fig.width=10}
+library(e1071)
+library(rminer)
+```
+
+```{r, warning=F, fig.width=10}
+# train the model 
+e1071model2 <- train(left~., data=hr_model, trControl=train_control, method="nb")
+# make predictions
+predictions<- predict(e1071model2,hr_model)
+e1071modelbinded <- cbind(hr_model,predictions)
+# summarize results
+confusionMatrix<- confusionMatrix(e1071modelbinded$predictions,e1071modelbinded$left)
+confusionMatrix
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Logistic regression
+
+```{r, warning=F, fig.width=10}
+# train the model 
+gmlmodel <- train(left~., data=hr_model, trControl=train_control, method="LogitBoost")
+# make predictions
+predictions<- predict(gmlmodel,hr_model)
+gmlmodelbinded <- cbind(hr_model,predictions)
+# summarize results
+confusionMatrix<- confusionMatrix(gmlmodelbinded$predictions,gmlmodelbinded$left)
+confusionMatrix
+
+# library("ROCR")
+# gmlmodelbinded$predictions <- as.numeric(paste(gmlmodelbinded$predictions))
+# 
+# perf.obj <- prediction(predictions=gmlmodelbinded$predictions, labels=gmlmodelbinded$left)
+# # Get data for ROC curve
+# roc.obj <- performance(perf.obj, measure="tpr", x.measure="fpr")
+# plot(roc.obj,
+#      main="Cross-Sell - ROC Curves",
+#      xlab="1 – Specificity: False Positive Rate",
+#      ylab="Sensitivity: True Positive Rate",
+#      col="blue")
+# abline(0,1,col="grey")
+
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Actionable insights
+
+The confusion matrix and the accuracy figures of the different model show that the predictive power is very similar and seems robust. About 95% accuracy and for a Kappa of 84%. We decide to keep the logistic regression model to lay out actionable insights. It's a very simple model and give the best results. 
+
+Here is a plot that show the probability to leave of the employees and their performance. We need to focus on the top right. To do that we build a data table were we rank the probability to leave found in the logistic regression model and the performance, we therefore find the priority for the company. 
+
+```{r, warning=F, fig.width=10}
+set.seed(100)
+# Keep some data to test again the final model
+inTraining <- createDataPartition(hr_model$left, p = .75, list = FALSE)
+training <- hr_model[ inTraining,]
+testing  <- hr_model[-inTraining,]
+# Estimate the drivers of attrition
+logreg = glm(left ~ ., family=binomial(logit), data=training)
+# Make predictions on the out-of-sample data
+probaToLeave=predict(logreg,newdata=testing,type="response")
+# Structure the prediction output in a table
+predattrition = data.frame(probaToLeave)
+# Add a column to the predattrition dataframe containing the performance
+predattrition$performance=testing$last_evaluation
+plot(predattrition$probaToLeave,predattrition$performance)
+```
+
+Here we display the first 300 employees that the company should retain. After grouping them per department we could email the different managers to tell them which valuable employees might leave soon.
+
+```{r, warning=F, fig.width=10}
+predattrition$priority=predattrition$performance*predattrition$probaToLeave
+orderpredattrition=predattrition[order(predattrition$priority,decreasing = TRUE),]
+orderpredattrition <- head(orderpredattrition, n=300)
+datatable(orderpredattrition)
+```
+
+
+<br/>
+<hr/>
+<br/>
+
+<center> Last updated on the 11/2015 </center>
+

@@ -1,0 +1,211 @@
+---
+title: <center> Scraping, geocoding and emailing </center>
+output:
+  html_document:
+    #code_folding: hide
+    highlight: monochrome
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+<br/>
+
+![](database/Mail.jpg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+# Introduction
+
+At work, we all need **relevant information delivered in a timely manner** and data science can help to do that. Here is a brief example of a short and useful program.
+
+Let's say our partners (more than 100) want to know when and **where interesting events will happen near their location**. Of course, we want them to attend these events because it will raise their awareness of the latest technology and develop their local business network.
+
+So we write a code that **(1) find the relevant event** with the time and location, **(2) add on the world map the location** of these events, **(3) send this information per email**. This program could be easily rerun automatically every months. 
+
+<br/>
+<hr/>
+<br/>
+
+**Library needed:**
+
+```{r, message=F, warning=F}
+library(plyr)
+library(dplyr)
+library(rvest)
+library(stringr)
+library(DT)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Scraping {.tabset}
+
+For the sake of the example let's take the events listed on this website: <a href="https://www.eventbrite.ca/d/canada--toronto/startup-conference/">www.eventbrite.ca</a>. We select the event name, time and location. We also clean each string using the stringr library.
+
+## Event Title
+
+```{r, message=F, warning=F}
+startup_events <- read_html("https://www.eventbrite.ca/d/canada--toronto/startup-conference/")
+
+# Event name
+events_title <- startup_events %>% 
+  html_nodes(".list-card__title") %>%
+  html_text()
+
+# Clean
+events_title <- str_trim(events_title)
+events_title
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Time
+
+```{r, message=F, warning=F}
+# Event time
+events_time <- startup_events %>% 
+  html_nodes("time") %>%
+  html_text()
+
+# Clean
+events_time <- str_trim(events_time)
+events_time
+
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Location
+
+```{r, message=F, warning=F}
+# Event location
+events_location <- startup_events %>% 
+  html_nodes(".list-card__venue") %>%
+  html_text()
+
+# Clean
+events_location <- str_trim(events_location)
+events_location
+
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Results
+
+```{r, message=F, warning=F}
+# create a data frame with all this element as varibles
+Events_df = data.frame(events_title, events_time, events_location)
+datatable(Events_df)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Geocoding 
+
+Load library:
+
+```{r, message=F, warning=F}
+library(ggmap)
+library(leaflet)
+library(RColorBrewer)
+```
+
+
+Set the variable as characters
+
+```{r, message=F, warning=F}
+# set as characters
+Events_df$events_title <- as.character(Events_df$events_title)
+Events_df$events_time <- as.character(Events_df$events_time)
+Events_df$events_location <- as.character(Events_df$events_location)
+str(Events_df)
+```
+
+## Get longitude and latitude
+
+```{r, eval=FALSE, message=F, warning=F}
+# get lon and lat
+geocodes <-geocode(Events_df$events_location, output="latlona")
+# rename
+geocodes <- rename(geocodes, c("address"="events_location"))
+# join the data table
+geocodes_join <- bind_cols(geocodes, Events_df)
+geocodes_join_Wna <- geocodes_join[complete.cases(geocodes_join),]
+```
+
+## Display results
+
+```{r, echo=FALSE, message=F, warning=F}
+## As it's an example i am using a csv here to not rerun the ggmap code each time.
+# saved csv -> write.csv(geocodes_join_Wna, "geocodes_join_Wna.csv")
+geocodes_join_Wna_csv <- read.csv(file="database/geocodes_join_Wna.csv", header=T, sep = ",")
+geocodes_join_Wna_csv_select <- geocodes_join_Wna_csv %>% select(lon:events_title)
+datatable(geocodes_join_Wna_csv_select)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Emailing 
+
+Here is the email we could send **every month with title, date and location**. The code is here displayed for the sake of the demontration. 
+
+## Email content
+
+```{r, message=F, warning=F}
+library(mailR) 
+
+leaflet(geocodes_join_Wna_csv) %>% addTiles() %>%
+  addMarkers(~lon, ~lat, popup = ~events_title)
+
+geocodes_join_Wna_csv_select_2 <- geocodes_join_Wna_csv %>% select(events_title:events_time)
+datatable(geocodes_join_Wna_csv_select_2)
+
+```
+
+## Email code
+
+```{r, eval=FALSE, message=F, warning=F}
+library(mailR) 
+sender <- "sender@mail.com"
+recipients <- c("recipient1@mail.com", "recipient2@mail.com")
+send.mail(from = sender,
+          to = recipients,
+          subject = "Next events!",
+          html = T,
+          inline = T,
+          body = "report.html",
+          smtp = list(host.name = "smtp.mail.com", port=000, 
+                      user.name = "user@mail.com",            
+                      passwd = "passwd", ssl = TRUE),
+          authenticate = TRUE,
+          send = TRUE)
+```
+
+<br/>
+
+<center> Last updated on the 08/2015 </center>
+
+
+
+

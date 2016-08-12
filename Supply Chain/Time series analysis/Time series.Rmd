@@ -1,0 +1,343 @@
+---
+title: <center> Time Serie Analysis</center>
+output:
+  html_document:
+    code_folding: hide
+    highlight: monochrome
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_float: yes
+---
+
+<br/>
+
+<center> <h5> **Identifying the underlying structure of the time series and fitting an Autoregressive Integrated Moving Average (ARIMA) Model.** Today, these data science methods are used in finance, economics, biology engineering, retails and manufacturing. </h5> </center>
+
+<br/>
+
+![](TS.jpg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+# Introduction {.tabset}
+
+<br/>
+
+## Time Series 
+
+A time series can consist of the following components: **trends, seasonality, cyclic and random.** 
+
+The **trends refers to the long-term movement**. Does the values are increasing or decreasing over time? 
+The **seasonality report the periodic fluctuation** and it's often related to the calendar. 
+A **cyclic component also refer to a periodic fluctuation but not fixed as the seasonality.** For instance the price of many product are influenced by the inflation but these fluctuations are different than seasonality one.
+Now the **random component is what remains after accounting for the other three components listed above.** It's itself composed of noise with underlying structure that needs to be modelled to forecast future values. 
+
+<br/> 
+<hr/>
+<br/>
+
+## Business understanding
+
+We are in a business that uses two mains raw materials to build their products. For strategic purpose they want to keep an eye on the evolution of the price of this raw materials and forecast their trends.
+
+<br/>
+<hr/>
+<br/>
+
+## Process
+
+**Box-Jenkins methodology** (three steps): 
+
+1. Condition data and select a model
+
+  + Identify and account for any trends or seasonality in the time series
+
+  + Examine the remaining time series and determine a suitable model  
+
+2. Estimate the model parameters.
+3. Assess the model and return to step 1 if necessary. 
+
+<br/>
+<hr/>
+<br/>
+
+## Solution
+
+We will need first to **identify and model the structure of the time series** and second to **forecast future values** in the time seres.To apply a ARIMA model it's first necessary to understand the data we have, assess the quality of it and to remove any trends or seasonality in the time series. Such a time series is known as a stationary time series. A time series is a stationary time series if the following conditions are met:
+
++ The expected value (mean) of Y(t) is a constant for all values of t 
++ The variance of Y(t) is finite. 
++ The covariance of Y(t) and Y(t+h) is a measure of how the two variables, y(t) and y(t+h') vary together.  
+
+<br/>
+<hr/>
+<br/>
+
+## ABT
+
+Here are the data at our disposal:
+
+```{r, echo=F, message=F, warning=F}
+# Library needed:
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggvis)
+
+Mat1 <- read.csv("Mat1.csv", row.names=1)
+Mat1 <- ts(Mat1$VALUE, start=c(1948,1), freq=12)
+Mat2 <- read.csv("Mat2.csv", row.names=1)
+Mat2 <- ts((Mat2$VALUE), start=c(1948,1), freq=12)
+
+str(Mat1)
+str(Mat2)
+```
+
+*ABT = Analytics Base Table 
+
+<br/>
+<hr/>
+<br/>
+
+# Data exploration
+
+## Data quality report
+
+Raw material 1
+
+```{r, echo=F, message=F, warning=F}
+summary(Mat1)
+```
+
+Raw material 2
+
+```{r, echo=F, message=F, warning=F}
+summary(Mat2)
+```
+
+<br/>
+
+## First visualisations {.tabset}
+
+<br/>
+
+### Time series plot
+
+```{r, message=F, warning=F, fig.width=10}
+ts.plot(Mat1,Mat2, col=c("#2C3E50","#00ffcc"))
+abline(reg=lm(Mat2~time(Mat2)), col="#00ffcc")
+abline(reg=lm(Mat1~time(Mat1)), col="#2C3E50")
+```
+
+As we can see our first raw material price is very stable over the last 60 years: around $ 45 on average, with a pick at $ 55 in 1980. The second raw material price is slowly going up since the last 60 years, from $ 35 to $ 37. 
+
+<br/>
+<hr/>
+<br/>
+
+### Full decomposition 
+
+```{r, message=F, warning=F, fig.width=10}
+plot(decompose(Mat1), col="#2C3E50")
+plot(decompose(Mat2), col="#00ffcc")
+```
+
+As we can see our first raw material price is very stable over the last 60 years: around $ 45 on average, with a pick at $ 55 in 1980. The second raw material price is slowly going up since the last 60 years, from $ 35 to $ 37. 
+
+<br/>
+<hr/>
+<br/>
+
+# Autocorrelation
+
+## ACF Model 
+
+The ACF function make it easier to see the covariance of the variables in the time series and it's underlying structure. For a stationary time series, the ACF is analogous to the correlation function of two variables and the value falls between -1 and 1.Thus, **the closer the absolute value of ACF(h) is to 1, the more useful y(t) can be as a predictor of Y(t+h).**
+
+**Understand the results:** At lag 0, the ACF provides the correlation of every point with itself. So ACF(0) is always equals to 1. Then we can see how the further the prediction are the harder it’s to predict. At lag(1) we are already at 0.6 for one and 0.65 for the other.
+
+```{r, message=F, warning=F, fig.width=10}
+library(tseries)
+par(mfrow=c(1,2))
+acf(Mat1, col="#2C3E50")
+acf(Mat2, col="#00ffcc")
+```
+
+At first glance, there is a lot of consistency from one period to the next. That mean the position of the price today depend highly on the price yesterday. But, this effect gradually diminish over time. The correlation get's weaker as the periods are far away. That mean the price today depends less on the price two days ago and even less for three days. Finally, we can see that there is no seasonality effect. Otherwise we will have a recurrent bump somewhere in that curve.
+
+```{r, message=F, warning=F, fig.width=10}
+par(mar = rep(2, 4))
+# time intersection of 2 series.
+acf(ts.intersect(Mat1, Mat2))
+# head(ts.union(Mat1,Mat2))
+```
+
+Here we printed the covariation between the two time series. In order, this plot show first the ACF of the raw material 1, than the ACF of raw material 1 and raw material 2 (with forward lag), than the ACF of the raw material 2 and raw material 1 (with backward lag) and finally the ACF for the raw material 2 (as we have above already).
+
+<br/>
+<hr/>
+<br/>
+
+## Diff function{.tabset}
+
+Even if it seems that we have a good ACF result, actually our forecast will encounter some limitation. That is because, for now, our model can only tell us that the price tomorrow will be close to the price today, but nothing more. Here we present the difference from one point to another and compare it to a random walk.
+
+### Raw materials
+
+```{r, message=F, warning=F, fig.width=10}
+par(mfrow=c(1,2))
+acf(diff(Mat1), col="#2C3E50")
+acf(diff(Mat2), col="#00ffcc")
+```
+
+Note that the significance level is the blue line. **Our model is better than random, so we should be able to forecast it.** 
+
+<br/>
+<hr/>
+<br/>
+
+### Random walk
+
+*Just for comparison purposes.
+
+```{r, message=F, warning=F, fig.width=10}
+x<-w<-rnorm(1000)
+for (t in 2:1000) x[t]<-x[t-1]+w[t]
+plot(x, type="l")
+```
+
+```{r, echo=F, message=F, warning=F, fig.width=10}
+plot(acf(diff(x)))
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Partial autocorrelation
+
+The partial autocorrelation (PACF) isn't as strong as the ACF because it remove any linear dependence. The PACF is taken after a linear regression is used to remove the effect of the variable between Y(t) and Y(t+h) and Y(t+1). This (PACF) will be useful in identifying the order for the autoregressive model below.
+
+```{r, message=F, warning=F, fig.width=10}
+par(mfrow=c(1,2))
+pacf(Mat1, col="#2C3E50")
+pacf(Mat2, col="#00ffcc")
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Autoregression Model {.tabset}
+
+<br/>
+
+## Fit Autoregressive Models
+
+The autoregressive model specifies that the output variable **depends linearly on its own previous values and on a stochastic term** (an imperfectly predictable term); thus the model is in the form of a stochastic difference equation. We take the first raw material as an example:
+
+```{r, message=F, warning=F, fig.width=10}
+# ar = autoregression 
+## mle = maximun likelihood estimation method
+Mat1.ar <- ar(Mat1, method="mle")
+# print coefficients
+print(Mat1.ar)
+```
+
+Plot of the residuals:
+
+```{r, message=F, warning=F, fig.width=10}
+# autocorrelation of the residuals 
+acf(Mat1.ar$res[-1], na.action=na.pass)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Regression on time dimension
+
+The multiple R-squared show that our correlation aren't that strong.
+
+```{r, message=F, warning=F, fig.width=10}
+# Mat 1
+Mat1.reg<-lm(Mat1~time(Mat1))
+summary(Mat1.reg)
+confint(Mat1.reg)
+# check it by looking at the residuals
+```
+
+Plot of the residuals:
+
+```{r, message=F, warning=F, fig.width=10}
+# Autocorrelation of the residuals.
+acf(resid(Mat1.reg))
+# Partial autocorrelation of the residuals.
+pacf(resid(Mat1.reg))
+```
+
+<br/>
+<hr/>
+<br/>
+
+# ARIMA{.tabset}
+
+<br/>
+
+## Models
+
+Autoregressive Integrated Moving Average is a **combination of an autoregressive model (AR) and a moving average model (MA)** and a generalization of the autoregressive moving average (ARMA) model. Like in our case non-seasonal ARIMA models are generally denoted ARIMA (p,d,q) where parameters p, d, and q are non-negative integers, **p is the order (number of time lags), d is the degree of differencing (the number of times the data have had past values subtracted), and q is the order of the moving-average model.** Here is an example for the first raw material where we try 2 models with different parameters.
+
+```{r, message=F, warning=F, fig.width=10}
+# ARIMA (0,0,3)
+Mat1.ma <- arima(Mat1, order=c(0,0,3))
+print(Mat1.ma)
+
+# ARIMA (2,1,2)
+Mat1.arima <- arima(Mat1, order=c(2,1,2)) 
+print(Mat1.arima)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Forecast
+
+```{r, message=F, warning=F, fig.width=10}
+library(forecast)
+Mat1.plotF <- forecast(Mat1.arima, h=12)
+par(mfrow=c(1,2))
+plot(forecast(Mat1.arima, h=12))
+plot(Mat1.plotF, include=50)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Conclusion 
+
+<br/>
+
+This document show how a business can take time series into consideration by building **automatic mathematical model.** From here we could add many more raw materials and even compare their evolution. This was a very short technical example but you can see more about time series in the links below. 
+
+Data Science and Big Data Analytics: Discovering, Analyzing, Visualizing and Presenting Data Hardcover – 17 Mar 2015 by EMC Education Services (Editor)
+
+Time Series in R Session 1.1 (Basic Objects and Commands), librarianwomack, https://www.youtube.com/watch?v=QHsmAM6nktY 
+
+Practical Time Series Forecasting with R: A Hands-On Guide Paperback – 17 Jul 2015
+by Galit Shmueli  (Author), Kenneth C. Lichtendahl Jr (Author)
+
+<br/>
+
+<center> Last updated on the 10/2015 </center>
+
+

@@ -1,0 +1,623 @@
+---
+title: <center> Customer Analysis </center>
+output:
+  html_document:
+    theme: flatly
+    code_folding: hide
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_float: true
+---
+
+<br/>
+
+<center> <h5>The goal of this document is to show **how data science can generate real value for business.** Here we present different analytic's solutions that help managers to understand and segment their customers based on the purchase history. </h5> </center>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+# Data science problem {.tabset}
+
+Our analytic's solution depends on our understanding of the business problem. The better we grasp how the business works and what challenges it face, the better we can answer its need. In this first part, we present our **analytic’s solution**:
+
+<br/>
+
+## Business understanding
+
+Our business is a medium sized store based in a large city. Within it 20 years of existence, our business never have done any kind of analytics. But since few years, the shop is not growing as wanted, so the new manager decided to study the customer’ behaviours.
+
+The manager is aware that his company is sitting on a treasure trove of data and simply **lack the skills and people to analyse and exploit them efficiently.** He ask us to look into them.
+
+<br/>
+<hr/>
+<br/>
+
+## Problem 
+
+The sales are not growing as planned. Since few years the store has proposed new offers and get a new parking garage but the sales continued to grow too slowly for the store to achieve critical economy of scale. 
+
+On the analytic side, the store has nothing. **They don't know who their customers are and where they should spend their marketing budget.** 
+
+
+<br/> 
+<hr/>
+<br/>
+
+## Solution
+
+Digging insight from the store's data will enable us to **visualise the customer's behaviour in a new way,** and create **targeted marketing segmentations and campaigns, based on a data-driven strategy.**
+
+After having seen the available data, we propose three marketing analysis' methods: segmentation, scoring models and customer lifetime value. Segmentation is about understanding your customers, scoring models are about targeting the right ones, and customer lifetime value is about anticipating their future value. 
+
+<br/>
+<hr/>
+<br/>
+
+
+# Data exploration
+
+Our first goal is to understand the data that will be used to build each step of our analysis, and our second goal is to assess where the analysis might lack data or where the quality of it might suffer.
+
+## The data quality report
+
+Our database present the **orders processed** from 2006 to 2016. There are three variables:
+
+```{r, echo=FALSE, message=F, warning=F}
+# Library needed:
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggvis)
+# Download database
+Orders <- read.csv("DataBase/Orderst.csv", header = TRUE, sep = ";")
+
+# Set Date as Date
+Orders$Date = as.Date(Orders$Date, "%d/%m/%y")
+
+# Check the first lines
+head(Orders)
+```
+
+Here we describe the characteristics of our three variables. In 10 years we have had 264 200 customers that spent on average $80. We can see two issues in the data that we have to handle. One is the 428 missing values and the second is the outliers.
+As the outliers drive the mean up, this metric become irrelevant to measure the central tendency because our dataset is to much skewed by the few outliers. Here, the median is better to understand our distributions parameters.
+
+```{r, echo=FALSE, message=F, warning=F}
+summary(Orders)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## First visualisations
+
+```{r, message=F, warning=F, fig.width=10}
+
+# Load the SQL library 
+library(sqldf)
+
+# Select only the year as a numeric
+Orders$YOrder = as.numeric(format(Orders$Date, "%Y"))
+ 
+# Number of orders per year
+Number_of_Orders = sqldf("SELECT YOrder, COUNT(YOrder) AS 'counter' FROM Orders GROUP BY 1 ORDER BY 1")
+
+# Average "order total"" per year
+AvgTotal = sqldf("SELECT YOrder, AVG(Total) AS 'Total' FROM Orders GROUP BY 1 ORDER BY 1")
+
+par(mfrow=c(1,2))
+barplot(Number_of_Orders$counter, names.arg = Number_of_Orders$YOrder, main="Number of Orders", col="#2C3E50")
+barplot(AvgTotal$Total, names.arg = AvgTotal$YOrder, main = "Average per Orders ($)", col="#2C3E50")
+
+```
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+Ordersplot <- Orders %>% group_by(YOrder) %>% summarise(sum=sum(Total,na.rm=TRUE))
+barplot(Ordersplot$sum, names.arg = Ordersplot$YOrder, main = "Total orders per years ($)", col="#2C3E50")
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Handling data issues{.tabset}
+
+<br/>
+
+### Missing Values
+
+Let's count the missing values per columns and see how they are distributed within the dataset:
+
+```{r, echo=FALSE, message=F, warning=F}
+apply(is.na(Orders),2,sum)
+# Visualisation
+library(VIM)
+library(mice)
+md.pattern(Orders)
+```
+```{r, message=F, warning=F}
+aggr(Orders, prop = F, numbers = T)
+```
+
+Our missing values are only found in the total column, not within the date or the customer ID column. After discussing with the manager we learn that is due to a change of their ERP system. To handle theses missing values we decide to replace them with the median as the mean was too much influenced by the outliers. Now we have no more missing values:
+
+```{r, echo=FALSE, message=F, warning=F}
+Orders[is.na(Orders)] <- 39
+apply(is.na(Orders),2,sum)
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Outliers
+
+```{r, message=F, warning=F}
+boxplot(Total ~ Date, data=Orders, main="Outliers")  # clear pattern is noticeable.
+```
+
+After presenting this to the manager he told us we could remove the outliers and the negative value. So, here are now the data we will work with:
+
+```{r, echo=FALSE, message=F, warning=F}
+Orders <- Orders %>% filter(Total>=0)
+Orders <- Orders %>% filter(Total<10000)
+summary(Orders)
+```
+
+<br/>
+<hr/>
+<br/>
+
+
+# Segementation
+
+We can't treat all our customers in the same way, offer them the same product or charge the same price, because this leave too much value on the table. We need to build relevant segment of customers and use them to improve our relationship, offers and campaigns. Indeed, segmentation summarise efficiently mountains of data and make it usable.
+
+A good segmentation gather similar entities together and separate different one. It enable decision maker to treat the customer’ segments differently without going down to the individual level, which will be to hard to manage. 
+
+Once a segment is done, we need to describe it in simple terms. This enable managers to see the customer' differences of needs, desires and habits. Then, they can customise offerings, adapt customer' messages and optimise marketing campaigns.
+
+## Statistical segmentation 
+
+Customers have to be similar, but similar on which variables? Well, it depends of the business and the managerial question we are asking. Here our segmentation variables will be the recency, frequency, and monetary value, and our managerial goal is to understand the customer’ behaviours and values. Also we are limited by the amount of data available. For example we don't have any information about each customers age or sex.
+
+### RFM segmentation
+
+These three variables are good predictors of the future customer’ profitability and are easy to compute from the database presented above:
+
+```{r, message=T, warning=F, fig.width=10}
+# Compute the number of days from the last order (2017-01-01) and name this variable lastorders
+Orders$lastorders= as.numeric(difftime(time1 = "2017-01-01", time2 = Orders$Date,units = "days"))
+
+# Compute recency, frequency, and average order amount
+rfmOrders = sqldf("SELECT Customer_id,
+                          MIN(lastorders) AS 'recency',
+                          COUNT(*) AS 'frequency',
+                          AVG(Total) AS 'avgorder'
+                   FROM Orders GROUP BY 1")
+
+# Arrange per frequency
+rfmOrders <- rfmOrders %>% arrange(desc(frequency))
+
+# Display the first lines
+head(rfmOrders)
+```
+
+<br/>
+
+Each of these variable answer a key question:
+
+  + Recency – How recent is the customer's latest purchase?
+  + Frequency – How often did they purchase?
+  + Monetary Value – How much do they spend on average?
+
+Now that we have created the three variables, we can visualise our new distributions of the total and average order per customer:
+
+```{r, message=F, warning=F, fig.width=10}
+par(mfrow=c(1,2))
+# Plot the distribution of the frequency ~ Total
+hist(Orders$Total, breaks = 80, main = "Orders", xlab = "Total", col="#2C3E50")
+# Plot the distribution of the frequency ~ Avg order
+hist(rfmOrders$avgorder, breaks = 80, main = "Average Orders (per customers)", xlab = "Average Orders (per customers)", col="#2C3E50")
+```
+<br/>
+
+As our data aren’t at the same scale, we risk to find irrelevant patterns and build wrong segmentation. That’s why we need to de-skew our distribution and make it more normal. Indeed, transforming data is crucial as it enable us to meet the assumptions our analysis require:
+
+```{r, message=F, warning=F, fig.width=10}
+# Use the logarithm for all the variables:
+RerfmOrders <- rfmOrders
+RerfmOrders$frequency <- log(rfmOrders$frequency)
+RerfmOrders$recency <- log(rfmOrders$recency)
+RerfmOrders$avgorder <- log(rfmOrders$avgorder)
+# Print the first lines
+head(RerfmOrders)
+# Have a look on the summary
+summary(RerfmOrders)
+# Plot row
+par(mfrow=c(1,1))
+# Plot the distribution of the log
+hist(RerfmOrders$avgorde, breaks = 25, main = "Log (Average Orders (per customers)) ", xlab = "Log (Average Orders (per customers))", col="#2C3E50")
+```
+
+There are 3 other methods to transform your data:
+
++ Normalizing (or standardizing): subtract your data by the mean and divide it by the standard deviation. By doing that, you will obtain the “standard score”. Your data will be adjusted to a common scale, and it will help you to compare your data in a meaningful way.
++ Scaling (Min-Max scaling): alternatively, you could use the Min-Max scaling. It come in R with a very simple function scale(). Your data will be scaled in a range from 0 to 1 (or -1 to 1).
++ Create bucket: also, we could create a new variable that reinterpret the three variables by creating buckets. Of course this technic let a lot of information behind.
+
+<br/>
+<hr/>
+<br/>
+
+### Customer clustering
+
+Now we can create five clusters of customers using our 3 rescaled variables. It's important to notice that without the rescaling process we might find very different clusters than the one we display below.
+
+```{r, message=F, warning=F, fig.width=10}
+# 1. Run K-means (nstart = 20) and 5 different groups
+RerfmOrders <- RerfmOrders %>% filter(frequency>0)
+RerfmOrders_ <- RerfmOrders %>% select(recency:avgorder)
+RerfmOrders_km <- kmeans(RerfmOrders_, centers = 5, nstart = 20)
+
+# Plot using plotly 
+library(plotly)
+p <- plot_ly(RerfmOrders, x = recency, y = avgorder, z = frequency, type = "scatter3d", mode = "markers", color=RerfmOrders_km$cluster)%>% layout(showlegend = FALSE)
+p %>% layout(showlegend = FALSE)
+print(p)
+p <- plot
+```
+
+If there is a good separation on the recency variables, the separation is more nuanced for the frequency and the average ordered varibles.
+
+```{r, message=F, warning=F, fig.width=10}
+RerfmOrders_km$centers
+```
+
+
+**Conclusion:** these clustering methods enable us to create targeted marketing segments. Now we need to think on how to exploit them.
+
+<br/>
+<hr/>
+<br/>
+
+## Managerial segmentation
+
+From the segmentation obtained above we want to build segments of customers that are easily manageable. We are working with the same database and adding a variable that take the first purchase of every customers to assess their loyalty:
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+Orders$year_of_purchase = as.numeric(format(Orders$Date, "%Y"))
+Orders$days_since = as.numeric(difftime(time1 = "2017-01-01",
+                                            time2 = Orders$Date,
+                                            units = "days"))
+
+customers_2016 = sqldf("SELECT customer_id,
+                               MIN(days_since) AS 'recency',
+                               MAX(days_since) AS 'first_purchase',
+                               COUNT(*) AS 'frequency',
+                               AVG(Total) AS 'amount'
+                        FROM Orders GROUP BY 1")
+
+head(customers_2016)
+```
+
+To limit managerial complexity we restraint the number of segments created, but to enhance the value of our segmentation we create at least 4 segments that are usable to managers. Of course as the optimal segmentation solution will vary over time we will have to re-run our code to update our segmentation. 
+
+We now define as active a customer who purchased something within the last 12 months, as warm a customer whose last purchase happens a year before, that is between 13 and 24 months. We qualify as cold, a customer whose last purchase was between two and three years ago. For those who haven't purchased anything for more than three years, we qualify them as inactive.
+
+```{r, message=F, warning=F}
+customers_2016$segment = "NA"
+customers_2016$segment[which(customers_2016$recency > 365*3)] = "inactive"
+customers_2016$segment[which(customers_2016$recency <= 365*3 & customers_2016$recency > 365*2)] = "cold"
+customers_2016$segment[which(customers_2016$recency <= 365*2 & customers_2016$recency > 365*1)] = "warm"
+customers_2016$segment[which(customers_2016$recency <= 365)] = "active"
+Cust_2015 <-aggregate(x = customers_2016[, 2:5], by = list(customers_2016$segment), mean)
+names(Cust_2015)[names(Cust_2015)=="Group.1"] <- "Segments"
+head(Cust_2015)
+```
+
+Now, we create segments called low or high value, and underline our new customers by calling them new warm or new active customers. Here are all our final segments and the number of customers within each segments:
+
+```{r, message=F, warning=F}
+# Complete segment solution using which, and exploiting previous test as input
+customers_2016$segment = "NA"
+customers_2016$segment[which(customers_2016$recency > 365*3)] = "inactive"
+customers_2016$segment[which(customers_2016$recency <= 365*3 & customers_2016$recency > 365*2)] = "cold"
+customers_2016$segment[which(customers_2016$recency <= 365*2 & customers_2016$recency > 365*1)] = "warm"
+customers_2016$segment[which(customers_2016$recency <= 365)] = "active"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$first_purchase <= 365*2)] = "new warm"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$amount < 100)] = "warm low value"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$amount >= 100)] = "warm high value"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$first_purchase <= 365)] = "new active"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$amount < 100)] = "active low value"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$amount >= 100)] = "active high value"
+
+# Re-order factor in a way that makes sense
+customers_2016$segment = factor(x = customers_2016$segment, levels = c("inactive", "cold",
+                                                             "warm high value", "warm low value", "new warm",
+                                                             "active high value", "active low value", "new active"))
+table(customers_2016$segment)
+pie(table(customers_2016$segment), col = topo.colors(24))
+```
+
+Our final segmentation is composed of 8 segments. Such insights can improve managerial decisions on every levels. We see how much customers are different and how they should be treated differently.
+
+```{r, message=F, warning=F}
+Cust_full_2015 <-aggregate(x = customers_2016[, 2:5], by = list(customers_2016$segment), mean)
+names(Cust_full_2015)[names(Cust_full_2015)=="Group.1"] <- "Segments"
+print(Cust_full_2015)
+```
+
+Here is the revenue from each segment since two years. We can repeat this process and see which customers is changing segment and when. For example when a customer went from "active high value" to "low value" we should see if we can do anything about that. 
+
+```{r, message=F, warning=F, fig.width=10}
+par(mfrow=c(1,1))
+since2years <- customers_2016 %>% filter(recency<720)
+since2years <- since2years %>% group_by(segment) %>% summarise(sum=sum(amount,na.rm=TRUE))
+barplot(since2years$sum, names.arg = since2years$segment, col="#2C3E50")
+```
+
+**Conclusion:** with these segmentation methods, we can treat different customer, differently. For example we can send special offers to recently acquired customers, or meet them in person to push them to become loyal. Also we now see which customers are high value and which one aren't. That crucial for developing valuable relationship.
+
+We know how many customers there are within each segments and can visualise when a customer is changing segment. We could even lay out a narrative for each segment like, "I'm John, I'm 52 years old and I made my first purchase three months ago for a total of $20, and I wonder whether I'd make a new purchase in the future." 
+
+A great segmentation find a good balance between usability and completeness, between simplifying enough so it remains usable and not simplifying too much, so it's still valuable. As much as we can, segment have to be similar, measurable, and accessible. To say it in another way segments have to be statistically relevant and managerially relevant.
+
+<br/>
+<hr/>
+<br/>
+
+
+# Targeting and scoring 
+
+Here we build a model to predict how much money our customers are going to spend over the next 12 months. We use the same database than above and we compute three new variables: maximal amount spend, revenue from 2016, and a binary variable that answer if a customer bought anything in 2016 (1) or nothing (0).
+
+```{r, message=F, warning=F, fig.width=10}
+# Extract the predictors: (from 2015)
+customers_2015 = sqldf("SELECT customer_id,
+                               MIN(days_since) - 365 AS 'recency',
+                               MAX(days_since) - 365 AS 'first_purchase',
+                               COUNT(*) AS 'frequency',
+                               AVG(Total) AS 'avg_amount',
+                               MAX(Total) AS 'max_amount'
+                        FROM Orders
+                        WHERE days_since > 365
+                        GROUP BY 1")
+
+# Compute revenues generated by customers in 2016
+revenue_2016 = sqldf("SELECT customer_id, SUM(Total) AS 'revenue_2016'
+                      FROM Orders
+                      WHERE year_of_purchase = 2016
+                      GROUP BY 1")
+
+# Merge 2015 customers and 2016 revenue
+in_sample = merge(customers_2015, revenue_2016, all.x = TRUE)
+in_sample$revenue_2016[is.na(in_sample$revenue_2016)] = 0
+in_sample$active_2015 = as.numeric(in_sample$revenue_2016 > 0)
+
+# Display calibration (in-sample) data
+head(in_sample)
+summary(in_sample)
+```
+
+We now have 7 variables that by themselves are not saying much, but when combined together tell an interesting story. And to graps this story we are going to create a calibration model.
+
+## Calibrate the probability model
+
+```{r, message=F, warning=F, fig.width=10}
+library(nnet)
+prob.model = multinom(formula = active_2015 ~ recency + first_purchase + frequency + avg_amount + max_amount,
+                      data = in_sample)
+```
+
+The model predict customer’ probabilities. Here the importance of each predictor is shown by what we call weights and their statistical significance. If the weights are large it means they are good predictors. If not, it means they contribute very little to the predictions.
+
+```{r, message=F, warning=F, fig.width=10}
+coef = summary(prob.model)$coefficients
+std  = summary(prob.model)$standard.errors
+
+# Ratio 
+print(coef / std)
+```
+
+Our results show to which extent each parameters are significant. We see that recency and frequency are the most meaningful predictor in our model.
+
+## Calibrate the monetary model
+
+Now for our monetary model, we need to select only those who made a purchase. Here we try to predict how much -active customers- are going to spend next year. Note that we are using the logarithmic function to reduce the influence power from the few outliers. 
+
+```{r, message=F, warning=F, fig.width=10}
+# Select only active customer: 
+z = which(in_sample$active_2015 == 1)
+
+# Calibrate the monetary model, using a log-transform
+amount.model = lm(formula = log(revenue_2016) ~ log(avg_amount) + log(max_amount), data = in_sample[z, ])
+summary(amount.model)
+
+# Plot the results of this new monetary model
+## The fitted values are the value predicted by the model
+plot(x = log(in_sample[z, ]$revenue_2016), y = amount.model$fitted.values, col="#2C3E50", xlab = "revenue_2016", ylab = "fitted.values")
+```
+
+
+## Apply the models
+
+We are predicting two things. The first is the probability that an active customer will buy and the second is the amount they will spent.
+
+First we compute the RFM variables of today -note that we now work from the full database and not just a sample-, then we predict the target variables based on today's data. Here is our predicted probabilities.
+
+```{r, message=F, warning=F, fig.width=10}
+customers_2016 = sqldf("SELECT customer_id,
+                               MIN(days_since) AS 'recency',
+                               MAX(days_since) AS 'first_purchase',
+                               COUNT(*) AS 'frequency',
+                               AVG(Total) AS 'avg_amount',
+                               MAX(Total) AS 'max_amount'
+                        FROM Orders GROUP BY 1")
+
+customers_2016$prob_predicted = predict(object = prob.model, newdata = customers_2016, type = "probs")
+# To get the real value from the logarithm we have to use the exponant:
+customers_2016$revenue_predicted = exp(predict(object = amount.model, newdata = customers_2016))
+customers_2016$score_predicted = customers_2016$prob_predicted * customers_2016$revenue_predicted
+
+# Predicted probabilities:
+summary(customers_2016$prob_predicted)
+```
+
+Now we see the revenue predicted by our model. On average our customers will spend $ 45. We also have more information about the distribution:
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+summary(customers_2016$revenue_predicted)
+```
+
+The third things we predict is called **score predicted** and its the product of the two first values predicted. It's the average for every customer next year. The distribution of this spending goes from 0 to extreme values.
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+summary(customers_2016$score_predicted)
+```
+
+This last figure is important as it tells us how many customers have an expected revenue of more than $50. We can even see who these customers are, and lay out a special relationship with them. Now we see that there are 2006 customers that have an expected revenue of more than $50, and we print the first customer_id of this new group:
+
+```{r, message=F, warning=F, fig.width=10}
+z = which(customers_2016$score_predicted > 50)
+print(length(z))
+```
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+head(z)
+```
+
+
+<br/>
+<hr/>
+<br/>
+
+
+# Customer lifetime value
+
+The point of a customer lifetime value models -or CLV- is to see what is on average the value of each customer from the first purchase to the last. The goal of such methods is to analyse what is happening today and what has happened in the recent past in order to predict the revenues customers will generate in the future.
+
+Customer lifetime value models have many other applications in practice. For instance, you could compare one acquisition campaign to another, or the full life time value of different customer segments.
+
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+# CHANGE ALL THE DATE!!
+customers_2016 = sqldf("SELECT customer_id,
+                               MIN(days_since) AS 'recency',
+                               MAX(days_since) AS 'first_purchase',
+                               COUNT(*) AS 'frequency',
+                               AVG(Total) AS 'amount'
+                        FROM Orders GROUP BY 1")
+customers_2016$segment = "NA"
+customers_2016$segment[which(customers_2016$recency > 365*3)] = "inactive"
+customers_2016$segment[which(customers_2016$recency <= 365*3 & customers_2016$recency > 365*2)] = "cold"
+customers_2016$segment[which(customers_2016$recency <= 365*2 & customers_2016$recency > 365*1)] = "warm"
+customers_2016$segment[which(customers_2016$recency <= 365)] = "active"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$first_purchase <= 365*2)] = "new warm"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$amount < 100)] = "warm low value"
+customers_2016$segment[which(customers_2016$segment == "warm" & customers_2016$amount >= 100)] = "warm high value"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$first_purchase <= 365)] = "new active"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$amount < 100)] = "active low value"
+customers_2016$segment[which(customers_2016$segment == "active" & customers_2016$amount >= 100)] = "active high value"
+customers_2016$segment = factor(x = customers_2016$segment, levels = c("inactive", "cold",
+                                                                       "warm high value", "warm low value", "new warm",
+                                                                       "active high value", "active low value", "new active"))
+
+# Segment customers in 2015
+customers_2015 = sqldf("SELECT customer_id,
+                               MIN(days_since) - 365 AS 'recency',
+                               MAX(days_since) - 365 AS 'first_purchase',
+                               COUNT(*) AS 'frequency',
+                               AVG(Total) AS 'amount'
+                        FROM Orders
+                        WHERE days_since > 365
+                        GROUP BY 1")
+customers_2015$segment = "NA"
+customers_2015$segment[which(customers_2015$recency > 365*3)] = "inactive"
+customers_2015$segment[which(customers_2015$recency <= 365*3 & customers_2015$recency > 365*2)] = "cold"
+customers_2015$segment[which(customers_2015$recency <= 365*2 & customers_2015$recency > 365*1)] = "warm"
+customers_2015$segment[which(customers_2015$recency <= 365)] = "active"
+customers_2015$segment[which(customers_2015$segment == "warm" & customers_2015$first_purchase <= 365*2)] = "new warm"
+customers_2015$segment[which(customers_2015$segment == "warm" & customers_2015$amount < 100)] = "warm low value"
+customers_2015$segment[which(customers_2015$segment == "warm" & customers_2015$amount >= 100)] = "warm high value"
+customers_2015$segment[which(customers_2015$segment == "active" & customers_2015$first_purchase <= 365)] = "new active"
+customers_2015$segment[which(customers_2015$segment == "active" & customers_2015$amount < 100)] = "active low value"
+customers_2015$segment[which(customers_2015$segment == "active" & customers_2015$amount >= 100)] = "active high value"
+customers_2015$segment = factor(x = customers_2015$segment, levels = c("inactive", "cold",
+                                                                       "warm high value", "warm low value", "new warm",
+                                                                       "active high value", "active low value", "new active"))
+```
+
+## Compute transition matrix
+
+This transition matrix show how many customers switch from one segment to another. The rows display 2015 and the column display 2016. So, for instance, we can say that 49 inactive customers in 2015, became active high value in 2016. The next step is to understand why. 
+
+```{r, message=F, warning=F, fig.width=10}
+new_data = merge(x = customers_2015, y = customers_2016, by = "Customer_id", all.x = TRUE)
+transition = table(new_data$segment.x, new_data$segment.y)
+print(transition)
+```
+
+The last line display the new active customers. It's interesting to see that most of them after their first purchase become new warm and not active high value. This line is relevant if we want to assess the results of an acquisition campaign. 
+
+Now, to see the percentage behind this transition matrix we need to divide each row by its sum. And we obtain the matrix below. We can say for example, that if you were an inactive customer in 2015, then you had a 96 % change of remaining inactive. This matrix will be useful to make predictions. 
+
+```{r, message=F, warning=F, fig.width=10}
+transition = transition / rowSums(transition)
+print(transition)
+```
+
+## Make predictions
+
+We can see which customers will go from one segment to the next in the coming years. Our model compute the 3 next years -note that we didn't take into account the new customers in 2016 and 2017-. Below we present the bar plot of this evolution for 4 segments:
+
+```{r, message=F, warning=F, fig.width=10}
+# Initialize a matrix with the number of customers in each segment today and after 3 periods
+segments = matrix(nrow = 8, ncol = 4)
+segments[, 1] = table(customers_2016$segment)
+colnames(segments) = 2017:2020
+row.names(segments) = levels(customers_2016$segment)
+
+# Compute for each an every period
+for (i in 2:4) {
+   segments[, i] = segments[, i-1] %*% transition
+}
+
+# Display how segments will evolve over time
+print(round(segments))
+```
+```{r, echo=FALSE, message=F, warning=F, fig.width=10}
+# Plot inactive, active high value customers over time
+par(mfrow=c(2,2))
+barplot(segments[3, ], col="#2C3E50",  main="warm high value")
+barplot(segments[4, ], col="#2C3E50",  main="warm low value")
+barplot(segments[7, ], col="#2C3E50",  main="active high value")
+barplot(segments[6, ], col="#2C3E50",  main="active warm low value")
+```
+
+We now compute the revenue per segment for the three coming years. To do that we use our transition matrix and the average order per segment. (Note that we still don't take into account the new customer that we will start buying in 2017 and after.)
+
+```{r, message=F, warning=F, fig.width=10}
+yearly_revenue = c(0, 2, 60, 3, 10, 370, 60, 90)
+revenue_per_segment = yearly_revenue * segments
+print(revenue_per_segment)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Conclusion
+
+This analysis is a first step toward a **better customer's oriented business**. Now, the managers can **customise their offering, adapt their messages and optimise their marketing campaigns** much better than few months ago. But they can also measure their results in a more accurate manner.
+
+**So... What's next?** 
+More analytics will require more data about the products sold and about the customers. We could run an association rule algorithm to see what products tends to be bought together and therefore reorganised the store relevantly.
+On the customer side, it will be useful to know the location, sex and age of customers. For example woman and man might have very different buying behaviour and that is important to notice. 
+
+Finally, we propose to the store a plan to gather more data about their customer and we present the next possible step toward a more data-driven business. We show how applied machine learning with bigger dataset will improve the predictability and segmentation for the store.
+
+Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter")
+

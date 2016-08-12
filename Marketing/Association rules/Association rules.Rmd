@@ -1,0 +1,238 @@
+---
+title: <center > Association Rules </center>
+output:
+  html_document:
+    theme: flatly
+    code_folding: hide
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_float: true
+---
+
+<br/>
+
+<center> <h5> The association rule algorithm enable us to **find interesting relations within multiple databases to answer questions** such as: which products tend to be purchased together, or who buys what? This algorithm is also used in medical diagnosis, bio-medical, census data, fraud detection in web, CRM of credit card business, recommendation system and content optimisation. </h5> </center>
+
+<br/>
+
+![](Arules.jpg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+```{r, echo=FALSE, message=F, warning=F}
+Customer_info <- read.csv("Marketing campaign.csv", header = TRUE, sep = ";")
+```
+
+# Introduction {.tabset}
+
+<br/>
+
+## Association rule
+
+This unsupervised learning method enable us to **find interesting relation within multiple databases to answer questions such as: which products tend to be purchased together, or who buys what?...**
+
+Here we take an example where a company want to see **which customer answered to our latest marketing campaign** to compare and improve these campaigns in the future.
+
+<br/>
+<hr/>
+<br/>
+
+## Solution
+
+We will use the association rule algorithm called **apriori** from the **arules packages** to evaluate our marketing campaign and see who tends to respond to our latest offer.  Like any association rule algorithm it usually split up into two separate steps:
+
++ A minimum support threshold is applied to find all frequent item-sets in a database.
++ A minimum confidence constraint is applied to these frequent item-sets in order to form rules.
+
+Agrawal & Srikant have proposed a well-known approach which is the Apriori Algorithm. This approach is an **iterative process and each iteration has two steps:**
+
++ Step 1: To generate a set of candidate item sets.
++ Step 2: To prune all the disqualified candidates (i.e. all infrequent item sets).
+
+<br/> 
+<hr/>
+<br/>
+
+# Data exploration
+
+## The data quality report {.tabset}
+
+<br/>
+
+### Numeric variables
+
+```{r, echo=FALSE, message=F, warning=F}
+# Library needed:
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(ggvis)
+library(DT)
+# Download database
+head(Customer_info)
+summary(Customer_info)
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Factor variables
+
+```{r, echo=FALSE, message=F, warning=F}
+# Define variables Customer2
+Customer_info$answered <- as.factor(Customer_info$answered)
+Customer_info$age <- as.factor(Customer_info$age)
+Customer_info$distance <- as.factor(Customer_info$distance)
+# Set binary into factor or numeric?
+Customer_info$sex <- as.factor(Customer_info$sex)
+Customer_info$children <- as.factor(Customer_info$children)
+Customer_info$pets <- as.factor(Customer_info$pets)
+# Rename factor levels
+levels(Customer_info$answered) <- c('no', 'yes')
+levels(Customer_info$age) <- c('young', 'middle-aged', 'elderly')
+levels(Customer_info$sex) <- c('man', 'woman')
+levels(Customer_info$distance) <- c('near', 'in-middle', 'far')
+levels(Customer_info$children) <- c('no', 'yes')
+levels(Customer_info$pets) <- c('no', 'yes')
+head(Customer_info)
+summary(Customer_info)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Modeling 
+
+## Association Rules {.tabset}
+
+Here we are using the apriori algorithm to create our association rules model. We want to know **who is answering to our marketing campaign.** Of course, this is a simple example, but we can imagine this algorithm working with many more variables and evaluating different marketing activities launched in parallel. 
+
+<br/>
+
+### Apriori Algorithm
+
+The Apriori algorithm takes a bottom-up iterative approach to uncovering the frequent item sets by first determining all the possible items and then identifying which among them are frequent. We will use **the apriori() function from the arule package to implements the Apriori algorithm and create frequent item sets.**
+
+```{r, message=F, warning=F}
+library(arules)
+attach(Customer_info)
+# select only the relevant variables
+Customer_info <- Customer_info %>% select(answered:pets)
+
+# precise settings
+rules <- apriori(Customer_info, parameter = list(minlen=2, supp=0.005, conf=0.8), appearance = list(rhs=c("answered=no", "answered=yes"), default="lhs"), control = list(verbose=F))
+rules.sorted <- sort(rules, by="lift")
+inspect(head(sort(rules.sorted, by="support"), 10))
+
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Pruning Redundant Rules
+
+After applying a minimum threshold the algorithm identifies and retains the item sets that appear in at least 50% of all transactions and **discards (or "prunes away") the item sets that have a support inferior to that threshold.** The word prune is used like it would be gardening, where unwanted branches of a bush are clipped away. 
+
+```{r, message=F, warning=F}
+# find redundant rules
+subset.matrix <- is.subset(rules.sorted, rules.sorted)
+subset.matrix[lower.tri(subset.matrix, diag=T)] <- NA
+redundant <- colSums(subset.matrix, na.rm=T) >= 1
+head(which(redundant))
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Visualizing The Rules {.tabset}
+
+<br/>
+
+In order to select interesting rules from the set of all possible rules, **constraints on various measures of significance and interest are used.** The best-known constraints are minimum thresholds on support and confidence.
+
++ **Support** is an indication of how frequently the item-set appears in the database.
++ **Confidence** is an indication of how often the rule has been found to be true.
+
+$$ {\displaystyle \mathrm {conf} (X\Rightarrow Y)=\mathrm {supp} (X\cup Y)/\mathrm {supp} (X)} {\mathrm  {conf}}(X\Rightarrow Y)={\mathrm  {supp}}(X\cup Y)/{\mathrm  {supp}}(X). $$
+
++ The **lift** of a rule is defined the ratio of the observed support to that expected if X and Y were independent.
+
+$$ {\displaystyle \mathrm {lift} (X\Rightarrow Y)={\frac {\mathrm {supp} (X\cup Y)}{\mathrm {supp} (X)\times \mathrm {supp} (Y)}}} {\mathrm  {lift}}(X\Rightarrow Y)={\frac  {{\mathrm  {supp}}(X\cup Y)}{{\mathrm  {supp}}(X)\times {\mathrm  {supp}}(Y)}} $$
+
+*We use the arulesViz library.
+
+<br/>
+
+### Scatter plot 
+
+```{r, message=F, warning=F}
+## install.packages(arules , scatterplot3d, vcd, seriation, igraph,"grid","cluster","TSP","gclus", "colorspace")
+## install.packages("arulesViz")
+
+library(arulesViz)
+# remove redondant rules.
+rules.pruned <- rules.sorted[!redundant]
+plot(rules.pruned)
+```
+
+
+```{r, message=F, warning=F}
+plot(rules.pruned@quality)
+```
+
+<br/>
+<hr/>
+<br/>
+
+### Graphs
+
+```{r, message=F, warning=F}
+# example with only 5
+highliftrules <- head(sort(rules.pruned, by = "lift"), 5)
+plot(highliftrules, method = "graph", control = list(type="items"))
+# now 20 
+highliftrules <- head(sort(rules.pruned, by = "lift"), 20)
+plot(highliftrules, method = "graph", control = list(type="items"))
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Conclusion
+
+<br/>
+
+From this simple example, we can see that the people who answer to our marketing campaign are mainly **woman of middle age, with children and/or pets and who leave not far from the store.** Furthermore the scatter plot present how much robust these rules are.
+
+<br/>
+
+**Methods to Improve Apriori’s Efficiency:**
+
+• Hash-based itemset counting: A k-itemset whose corresponding hashing bucket count is below the threshold cannot be frequent.
+
+• Transaction reduction: A transaction that does not contain any frequent k-itemset is useless in subsequent scans.
+
+• Partitioning: Any itemset that is potentially frequent in DB must be frequent in at least one of the partitions of DB.
+
+• Sampling: mining on a subset of given data, lower support threshold + a method to determine the completeness.
+
+• Dynamic itemset counting: add new candidate itemsets only when all of their subsets are estimated to be frequent.
+
+Source: Data Science and Big Data Analytics: Discovering, Analyzing, Visualizing and Presenting Data Hardcover – 17 Mar 2015 by EMC Education Services (Editor)
+
+<br/>
+
+<center> Last updated on 12/2015 </center>
+

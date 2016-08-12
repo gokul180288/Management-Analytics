@@ -1,0 +1,236 @@
+---
+title: <center> Predictive Maintenance </center>
+output:
+  html_document:
+    theme: paper
+    code_folding: hide
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_float: true
+---
+
+<br/>
+
+![](Machine.jpg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+
+# Data to insight to decision {.tabset}
+
+<br/>
+
+## Business understanding
+
+Here we take an example of a business that uses many machines to build their final products. As the supply chain is stopped every-time a machine break, the manager asked a consulting firm to build a **predictive model that finds which machine is going to break next and why.** 
+
+<br/>
+<hr/>
+<br/>
+
+## Analytic solution 
+
+The solution will predict **which machine will break next** and propose some reasons about **why these machines have different lifetimes.** A survival analysis is a good choice as we can visualise the machine's lifetime very easily. 
+
+<br/> 
+<hr/>
+<br/>
+
+## Assessing Feasibility
+
+The business has data on each machine for the last pasts years and they are able to provide some more information such as the team that used it and its provider. These information seems sufficient to start an analysis.
+
+<br/>
+<hr/>
+<br/>
+
+## Analytics Base Table
+
+Here is the first 20 lines of our database. The lifetime is how long the machine has been used until now (in weeks), as "Ind"" mean Index we have the pressure, the moisture and the temperature index.
+
+```{r, message=F, warning=F}
+# Load our dataset
+maintenance = read.table('maintenance_data.csv',sep=';',header=TRUE)
+
+# Set the variable's types
+maintenance$lifetime <- as.numeric(maintenance$lifetime)
+headmaintenance <- head(maintenance, n=20)
+library(DT)
+datatable(headmaintenance, options = list(pageLength = 5))
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Data exploration
+
+## Data quality report
+
+As we summarise the data, we can see that the business have used 1000 machines. Machine have an average lifetime of 55 weeks, with some brand new machines and others that are running since almost two years. In our dataset almost **40 % of the machines have being broken in the past two years.** 
+
+```{r, message=F, warning=F}
+# Librairy
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(ggvis)
+library(corrplot)
+
+# display the summary
+summary(maintenance)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## First visualisations
+
+The first graph show the **statistical distribution of a machine's lifetime.** We can see that on average machines break after 80 weeks, but they can break from within 60 to 100 weeks. The second and third graphs show that for team C or provider 3 their machines tend to break several weeks before the others. Below we present the correlation between all the others variables that aren't factors. 
+
+```{r, message=F, warning=F, fig.width=10}
+## When do machine breack on average?
+maintenance_broken <- maintenance %>% filter(broken == 1)
+par(mfrow=c(1,3))
+boxplot(lifetime~broken,data=maintenance_broken, main="Borken machines", xlab="", ylab="Lifetime",col="#357EC7")
+boxplot(lifetime~team,data=maintenance_broken, main="Per team", xlab="", ylab="",col="#357EC7")
+boxplot(lifetime~provider,data=maintenance_broken, main="Per provider", xlab="", ylab="",col="#357EC7")
+```
+
+```{r, message=F, warning=F, fig.width=10}
+# Correlation matrix 
+cor(maintenance_cor <- maintenance %>% select(lifetime:temperatureInd))
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Survival analysis {.tabset}
+
+As we have seen above, all variables tell us something about when a machine will break. We decide to use them all into our survival analysis model. We create a model using the **gaussian method** and use directly the maintenance dataset presented above. You can find here the coefficients for all our variables and just below see the survival plot and the summary of our survival model.
+
+```{r, message=F, warning=F, fig.width=10}
+library(survival)
+# Choose the dependant variables to be used in the survival regression model.
+dependantvars = Surv(maintenance$lifetime, maintenance$broken)
+
+# Create model (use the gaussian method)
+survreg = survreg(dependantvars~pressureInd+moistureInd+temperatureInd+team+provider, dist="gaussian",data=maintenance)
+print(survreg)
+```
+
+<br/>
+
+## Survival Plot
+
+```{r, message=F, warning=F, fig.width=10}
+library(GGally)
+maintenance_graph <- survfit(Surv(lifetime,broken) ~ 1, data = maintenance)
+ggsurv(maintenance_graph)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Per team
+```{r, message=F, warning=F, fig.width=10}
+maintenance_graph2 <- survfit(Surv(lifetime,broken) ~ team, data = maintenance)
+ggsurv(maintenance_graph2)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Per providers
+```{r, message=F, warning=F, fig.width=10}
+maintenance_graph3 <- survfit(Surv(lifetime,broken) ~ provider, data = maintenance)
+ggsurv(maintenance_graph3)
+```
+
+<br/>
+<hr/>
+<br/>
+
+## Summary
+```{r, message=F, warning=F, fig.width=10}
+summary(survreg)
+```
+
+<br/>
+<hr/>
+<br/>
+
+# Predictions and call to action
+
+## Predictions
+
+Using our survival analysis, we can now predict which machine will break next and therefore prioritise the maintenance on these machines to avoid the supply chain to stop. Here we display the 20 machines that should be changed this month and we order them by their **remaining lifetime.**
+
+```{r, message=F, warning=F, fig.width=10}
+# Predict
+# p = percentile = 0,5 = expected median
+Ebreak=predict(survreg, newdata=maintenance, type="quantile", p=.5)
+
+# Make forecast
+Forecast=data.frame(Ebreak)
+Forecast$lifetime=maintenance$lifetime
+Forecast$broken=maintenance$broken
+
+# Computed Expected Remaining Lifetime (remainingLT)
+Forecast$RemainingLT=Forecast$Ebreak-maintenance$lifetime
+
+# Order the elements by Expected Remaining Lifetime
+Forecast=Forecast[order(Forecast$RemainingLT),]
+
+# Keep only those who are not broken yet
+ActionsPriority=Forecast[Forecast$broken==0,]
+ActionsPriorityDT <- head(ActionsPriority, n=20)
+datatable(ActionsPriorityDT)
+```
+
+
+## Call to action
+
+### Automatisation 
+
+The **first action should be to change the machines with a remaining lifetime inferior to one week,** and re-run our program every few days to change the next machine that will break. Here we have a data table that will be **automatically emailed to the manager every week.** Also, we attach the ID of the machine that has to be changed. 
+
+
+```{r, message=F, warning=F, fig.width=10}
+ActionsPriority$class <- cut(ActionsPriority$RemainingLT, c(-10,1,4,1000))
+levels(ActionsPriority$class) <- c('Urgent', 'Medium', 'good')
+summary(ActionsPriority)
+```
+
+
+### Management
+
+The **second action is to show these figures to team C and provider 3 and monitor the improvement.** Now the management could focus on the enhancement of the machines' lifetimes and see what are the best methods. Of course we should interview the workers as we could have new insights on how we could push the lifetime of each machine further.  
+
+
+<br/>
+<hr/>
+<br/>
+
+*Sources: Essec Business School - http://www.essec.edu/en/ - Course in Business Analytics
+
+<br/>
+
+<center> Last updated on 10/2015 </center>
+
+
+
+
+
+
