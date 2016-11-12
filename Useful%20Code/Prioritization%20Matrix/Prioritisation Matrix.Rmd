@@ -1,0 +1,67 @@
+---
+title: "<center> Prioritization Matrix </center>"
+output:
+  html_document:
+    code_folding: show
+    highlight: tango
+    number_sections: no
+    toc: no
+    toc_float: no
+  pdf_document:
+    toc: yes
+---
+
+<br/>
+
+![](Plotlyheader.jpeg)
+
+<br/>
+
+<center> Find me on twitter: [LudoBenistant](https://twitter.com/LudoBenistant "Twitter") </center>
+
+<br/>
+<hr/>
+<br/>
+
+
+# How should you prioritize your data science projects?
+
+First, be very clear about the problems you are trying to tackle. Second, explain your projects to your team and gather feedback. Third, plot the most important features on which you want to compare your potential projects.
+
+Here is an example of a project prioritization done on three variables:  
+- Business value  
+- Feasibility  
+- Cost  
+
+We started by describing our projects’ goals, and explaining them in detail to evaluate the potential business value, feasibility, and cost. As a result, we created the graph below: 
+
+```{r, fig.width=10, message=F, warning=F}
+# Prioritisation Matrix
+library(plotly)
+library(readxl)
+library(xlsx)
+library(dplyr)
+library(dplyr)
+
+PriorityMatrix = read.xlsx("Priority matrix.xlsx", 1, head = T, stringsAsFactors = F)
+PriorityMatrix$category <- as.factor(PriorityMatrix$category)
+```
+
+```{r, fig.width=10, message=F, warning=F}
+p <- plot_ly(PriorityMatrix, x = ~feasibility, y = ~business_value, text = ~paste("Project Name: ", project_name, '</br> Cost: ', Cost), type = 'scatter', mode = 'markers', size = ~Cost, color = ~category, colors = 'Paired',
+             marker = list(opacity = 0.7, sizemode = 'diameter')) %>%
+  layout(title = ' ',
+         xaxis = list(showgrid = FALSE, range = c(0.5, 11)),
+         yaxis = list(showgrid = FALSE, range = c(0.5, 12)),
+         showlegend = TRUE,
+         margin = "100"
+  ) %>% 
+  layout(plot_bgcolor='rgba(255, 255, 255, 1)') %>% 
+  layout(paper_bgcolor='rgba(255, 255, 255, 1)',
+         font = "Times New Roman",
+         titlefont = "Times New Roman") 
+
+p
+```
+
+
