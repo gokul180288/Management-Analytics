@@ -1,0 +1,18 @@
+project_name,category,Cost,business_value,feasibility,last_update
+Project 1,category1,5,8,6,2016
+Project 2,category2,6,7,5,2016
+Project 3,category3,3,7,4,2016
+Project 4,category1,3,6,7,2016
+Project 5,category1,6,10,5,2016
+Project 6,category1,2,6,8,2016
+Project 7,category3,7,9,4,2016
+Project 8,category3,1,3,8,2016
+Project 9,category2,6,6,4,2016
+Project 10,category2,6,5,8,2016
+Project 11,category2,4,10,8,2016
+Project 12,category3,2,5,8,2016
+Project 13,category4,4,7,8,2016
+Project 14,category4,3,6,7,2016
+Project 15,category4,2,7,8,2016
+Project 16,category4,8,3,7,2016
+Project 17,category4,2,5,8,2016
